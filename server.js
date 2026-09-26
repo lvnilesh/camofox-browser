@@ -1142,6 +1142,30 @@ async function launchBrowserInstance() {
         localVirtualDisplay = virtualDisplayRegistry.create();
         vdDisplay = await localVirtualDisplay.get();
         log('info', 'xvfb virtual display started', { display: vdDisplay, attempt });
+        // Verify Xvfb is actually alive (steam-run sandbox may kill it silently).
+        // If the process died, fall back to the host X11 display.
+        try {
+          const { execSync: _execSync } = require("child_process");
+          const _pid = localVirtualDisplay.proc?.pid;
+          if (!_pid) {
+            throw new Error("no xvfb pid");
+          }
+          _execSync("kill -0 " + _pid + " 2>/dev/null", { timeout: 2000 });
+        } catch (_verifyErr) {
+          log("warn", "xvfb process died - falling back to host display", {
+            error: _verifyErr.message,
+            display: vdDisplay,
+          });
+          localVirtualDisplay.kill();
+          localVirtualDisplay = null;
+          const _hostDisplay = process.env.DISPLAY;
+          if (_hostDisplay) {
+            vdDisplay = _hostDisplay;
+            log("info", "using host display", { display: _hostDisplay });
+          } else {
+            vdDisplay = undefined;
+          }
+        }
       }
     } catch (err) {
       log('warn', 'xvfb not available, falling back to headless', { error: err.message, attempt });
